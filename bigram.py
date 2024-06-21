@@ -33,6 +33,8 @@ char = sorted(list(set(text)))
 vocab_size = len(char)
 print(''.join(char))
 print(vocab_size)
+eval_iters = 200
+max_iters = 10000
 
 # %%
 # bringing in tiktoken's tokenizer
@@ -109,6 +111,22 @@ def get_batch(split):
     y = torch.stack([data[i + 1: i + block_size + 1] for i in ix])
     
     return x, y
+
+# estimate function that estimates the average loss in splits
+def estimate():
+    out = {}
+    model.eval()
+    for split in ["train", "val"]:
+        losses = torch.zeros(eval_iters)
+        for i in range(eval_iters):
+            X, Y = get_batch(split)
+            logits, loss = model(X, Y)
+            losses[i] = loss.item()
+        out[split] = losses.mean() # collecting the average
+    model.train()
+
+    return out
+
 
 # %%
 # collecting inputs and targets from the training data
@@ -187,7 +205,10 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 # increasing batch size and setting a loop to evaluate loss
 batch_size = 32
 
-for _ in range(10000): # my computer almost blew up
+for i in range(max_iters): # my computer almost blew up
+
+    losses = estimate()
+
     xb, yb = get_batch("train")
     logits, loss = model(xb, yb)
     optimizer.zero_grad()
@@ -195,6 +216,7 @@ for _ in range(10000): # my computer almost blew up
     optimizer.step()
 
 print(loss.item())
+print(f"step {i}: train loss: {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
 # %% [markdown]
 # As we can see, there are drastic improvements than to before.
