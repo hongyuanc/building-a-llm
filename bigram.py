@@ -35,6 +35,7 @@ print(''.join(char))
 print(vocab_size)
 eval_iters = 200
 max_iters = 10000
+num_emb = 32
 
 # %%
 # bringing in tiktoken's tokenizer
@@ -140,12 +141,14 @@ print(yb)
 # class for the language model
 class BigramLM(nn.Module):
 
-    def __init__(self, vocab_size):
+    def __init__(self):
         super().__init__()
-        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+        self.token_embedding_table = nn.Embedding(vocab_size, num_emb)
+        self.lm_head = nn.Linear(num_emb, vocab_size)
 
     def forward(self, inputs, targets=None):
-        logits = self.token_embedding_table(inputs) # batch, time, channel
+        token_emb = self.token_embedding_table(inputs) # batch, time, channel
+        logits = self.lm_head(token_emb)
 
         if targets is None:
             loss = None
@@ -178,7 +181,7 @@ class BigramLM(nn.Module):
 
 # %%
 # this was where i found that tiktoken wouldn't work
-model = BigramLM(vocab_size)
+model = BigramLM()
 
 logits, loss = model(xb, yb)
 
@@ -207,16 +210,17 @@ batch_size = 32
 
 for i in range(max_iters): # my computer almost blew up
 
-    losses = estimate()
+    #losses = estimate()
 
     xb, yb = get_batch("train")
     logits, loss = model(xb, yb)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+    i += 1
 
 print(loss.item())
-print(f"step {i}: train loss: {losses['train']:.4f}, val loss {losses['val']:.4f}")
+#print(f"step {i}: train loss: {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
 # %% [markdown]
 # As we can see, there are drastic improvements than to before.
