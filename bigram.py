@@ -179,14 +179,18 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 batch_size = 32
 
 for i in range(max_iters):
+
+    if i % 100 == 0:
+        # losses = estimate()
+        print(f"Step {i}: Loss = {loss.item()}")
+
     xb, yb = get_batch("train")
     logits, loss = model(xb.to(device), yb.to(device))
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
-    if i % 100 == 0:
-        print(f"Step {i}: Loss = {loss.item()}")
+
 
 print(loss.item())
 
