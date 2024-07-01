@@ -1,7 +1,6 @@
 # %%
 # importing libraries
 import torch
-import tiktoken
 import torch.nn as nn
 from torch.nn import functional as F
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -38,25 +37,6 @@ max_iters = 10000
 num_emb = 32
 
 # %%
-# bringing in tiktoken's tokenizer
-
-# THIS DiD NOT WORK
-
-enc = tiktoken.get_encoding("gpt2")
-enc.n_vocab
-
-# %%
-# testing with encoding and decoding; it works now, but note that we only have
-# a vocab_size of 85
-encode = enc.encode("hello")
-print(encode)
-enc.decode(encode)
-
-encode1 = enc.encode(text[:100])
-print(encode1)
-enc.decode(encode1)
-
-# %%
 # hence we need to tokenize the vocab ourselves
 stoi = { ch:i for i, ch in enumerate(char)}
 itos = { i:ch for i, ch in enumerate(char)}
@@ -73,8 +53,6 @@ print(decode(foo))
 
 # %%
 # testing encode with my own functions
-# notice the difference between tiktoken
-# but we cannot use tiktoken so this will do
 test_encode = encode(text[:100])
 print(test_encode)
 print(decode(test_encode))
@@ -107,7 +85,7 @@ def get_batch(split):
     else:
         data = val
 
-    ix = torch.randint(len(data) - batch_size, (batch_size,))
+    ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([data[i:i + block_size] for i in ix])
     y = torch.stack([data[i + 1: i + block_size + 1] for i in ix])
     
@@ -128,7 +106,6 @@ def estimate():
 
     return out
 
-
 # %%
 # collecting inputs and targets from the training data
 # targets used for creating the loss function later on
@@ -143,6 +120,7 @@ class BigramLM(nn.Module):
 
     def __init__(self):
         super().__init__()
+        self.block_size = block_size
         self.token_embedding_table = nn.Embedding(vocab_size, num_emb)
         self.position_embedding_table = nn.Embedding(block_size, num_emb)
         self.lm_head = nn.Linear(num_emb, vocab_size)
@@ -151,10 +129,11 @@ class BigramLM(nn.Module):
         B,T = inputs.shape
 
         token_emb = self.token_embedding_table(inputs) # batch, time, channel
-        pos_emb = self.position_embedding_table(torch.arrange(T))
+        pos_emb = self.position_embedding_table(torch.arange(T, device=inputs.device))
 
-        # x holds positions which tokens occur
+        T = min(T, self.block_size)
         x = token_emb + pos_emb
+
         logits = self.lm_head(x)
 
         if targets is None:
@@ -173,51 +152,46 @@ class BigramLM(nn.Module):
     
     def generate(self, inputs, number):
         for _ in range(number):
-            logits, loss = self(inputs)
+            inputs_cropped = inputs[:, -self.block_size:]
+            logits, loss = self(inputs_cropped)
             logits = logits[:, -1, :]
             prob = F.softmax(logits, 1)
             inputs_next = torch.multinomial(prob, 1)
             inputs = torch.cat((inputs, inputs_next), 1)
 
         return inputs
-    
 
 # %%
-# this was where i found that tiktoken wouldn't work
-model = BigramLM()
+# Initialize and move the model to the correct device
+model = BigramLM().to(device)
 
-logits, loss = model(xb, yb)
+logits, loss = model(xb.to(device), yb.to(device))
 
 print(logits.shape)
 print(loss)
 
-
 # %%
-# making a pytorch optimzer object
+# making a pytorch optimizer object
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-
 
 # %%
 # increasing batch size and setting a loop to evaluate loss
 batch_size = 32
 
-for i in range(max_iters): # my computer almost blew up
-
-    #losses = estimate()
-
+for i in range(max_iters):
     xb, yb = get_batch("train")
-    logits, loss = model(xb, yb)
+    logits, loss = model(xb.to(device), yb.to(device))
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    i += 1
+
+    if i % 100 == 0:
+        print(f"Step {i}: Loss = {loss.item()}")
 
 print(loss.item())
-#print(f"step {i}: train loss: {losses['train']:.4f}, val loss {losses['val']:.4f}")
-
 
 # %%
-input = torch.zeros((1, 1), dtype=torch.long)
+input = torch.zeros((1, 1), dtype=torch.long).to(device)
 print(decode(model.generate(input, 300)[0].tolist()))
 
-
+# %%
